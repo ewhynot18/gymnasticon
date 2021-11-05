@@ -74,10 +74,6 @@ export class AntServer {
       Ant.Messages.setPeriod(pwr_channel, PWR_PERIOD),
       Ant.Messages.openChannel(pwr_channel),
     ];
-    debuglog(`ANT+ server power start [deviceId=${pwr_deviceId} channel=${pwr_channel}]`);
-    for (let pm of pwr_messages) {
-      stick.write(pm);
-    }
 
     // Initialize SaC channel
     const sac_messages = [
@@ -87,6 +83,14 @@ export class AntServer {
       Ant.Messages.setPeriod(sac_channel, SAC_PERIOD),
       Ant.Messages.openChannel(sac_channel),
     ];
+
+    // Open PWR and SoC channels
+    // Wait between PWR and SoC open messages
+    debuglog(`ANT+ server power start [deviceId=${pwr_deviceId} channel=${pwr_channel}]`);
+    for (let pm of pwr_messages) {
+      stick.write(pm);
+    }
+    sleep(200);
     debuglog(`ANT+ server speed and cadence start [deviceId=${sac_deviceId} channel=${sac_channel}]`);
     for (let scm of sac_messages) {
       stick.write(scm);
@@ -121,6 +125,7 @@ export class AntServer {
     for (let pm of pwr_messages) {
       stick.write(pm);
     }
+    sleep(200);
     for (let scm of sac_messages) {
       stick.write(scm);
     }
@@ -201,4 +206,12 @@ export class AntServer {
     }
     this.broadcastCycle++;
   }
+}
+
+export function sleep(milliseconds) {
+  const date = Date.now();
+  let currentDate = null;
+  do {
+    currentDate = Date.now();
+  } while (currentDate - date < milliseconds);
 }
