@@ -180,6 +180,12 @@ export function parse(data) {
     const power = data.readInt16LE(IBD_VALUE_IDX_POWER);
     const cadence = Math.round(data.readUInt16LE(IBD_VALUE_IDX_CADENCE) / 2);
     const speed = data.readUInt16LE(IBD_VALUE_IDX_SPEED) / 100;
+    debuglog('PARSE DEBUG:', {
+      raw: data.toString('hex'),
+      power,
+      cadence,
+      speed,
+    })
     return {power, cadence, speed};
   }
   throw new Error('unable to parse message');
