@@ -27,18 +27,29 @@ apt-get update
 apt-get install -y git
 EOF
 
-# Clone your custom Gymnasticon fork and install dependencies
 on_chroot <<EOF
-  rm -rf /opt/gymnasticon
   export PATH=/opt/gymnasticon/node/bin:\$PATH
+
+  # Clean up any old or broken clone
+  rm -rf /opt/gymnasticon
+
+  # Clone as root into /opt
+  git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
+  cd /opt/gymnasticon
+  git checkout speed-test
+
+  # Set correct ownership for the pi user
+  chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
+
+  # Run npm commands as pi
   su - ${GYMNASTICON_USER} -c '
-    git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
+    export PATH=/opt/gymnasticon/node/bin:\$PATH
     cd /opt/gymnasticon
-    git checkout speed-test
     npm install
     npm run build
   '
 EOF
+
 
 # Install service and config files
 install -v -m 644 files/gymnasticon.json "${ROOTFS_DIR}/etc/gymnasticon.json"
