@@ -5,12 +5,21 @@ NODE_URL=https://unofficial-builds.nodejs.org/download/release/v12.18.3/node-v12
 GYMNASTICON_USER=${FIRST_USER_NAME}
 GYMNASTICON_GROUP=${FIRST_USER_NAME}
 
+# Ensure certs and curl are installed before doing anything else
+on_chroot <<EOF
+apt-get update
+apt-get install -y ca-certificates curl git
+update-ca-certificates
+EOF
+
+# Install Node.js if not already present
 if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
   TMPD=$(mktemp -d)
   trap 'rm -rf $TMPD' EXIT
   curl -Lo $TMPD/node.tar.gz ${NODE_URL}
   sha256sum -c <(echo "$NODE_SHASUM256 $TMPD/node.tar.gz")
   install -v -m 644 "$TMPD/node.tar.gz" "${ROOTFS_DIR}/tmp/node.tar.gz"
+
   on_chroot <<EOF
     mkdir -p /opt/gymnasticon/node
     cd /opt/gymnasticon/node
@@ -22,41 +31,33 @@ if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
 EOF
 fi
 
+# Clone your Gymnasticon fork and build it
 on_chroot <<EOF
-apt-get update
-apt-get install -y git
-EOF
+export PATH=/opt/gymnasticon/node/bin:\$PATH
 
-on_chroot <<EOF
+# Remove any previous clone
+rm -rf /opt/gymnasticon
+
+# Clone the repository
+git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
+cd /opt/gymnasticon
+git checkout speed-test
+chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
+
+# Fallback if npm is missing
+if [ ! -x /opt/gymnasticon/node/bin/npm ]; then
+  echo "npm not found, installing via curl fallback..."
+  curl -L https://www.npmjs.com/install.sh | bash
+fi
+
+# Build as pi user
+su - ${GYMNASTICON_USER} -c '
   export PATH=/opt/gymnasticon/node/bin:\$PATH
-
-  # Clean up any old or broken clone
-  rm -rf /opt/gymnasticon
-
-  # Clone as root into /opt
-  git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
   cd /opt/gymnasticon
-  git checkout speed-test
-
-  # Set correct ownership for the pi user
-  chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
-
-  # Ensure npm is available
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "npm not found, installing manually..."
-    curl -L https://www.npmjs.com/install.sh | bash
-  fi
-
-  # Run npm commands as pi
-  su - ${GYMNASTICON_USER} -c '
-    export PATH=/opt/gymnasticon/node/bin:\$PATH
-    cd /opt/gymnasticon
-    npm install
-    npm run build
-  '
+  npm install
+  npm run build
+'
 EOF
-
-
 
 # Install service and config files
 install -v -m 644 files/gymnasticon.json "${ROOTFS_DIR}/etc/gymnasticon.json"
@@ -68,17 +69,17 @@ install -v -m 644 files/overlayfs.sh "${ROOTFS_DIR}/etc/profile.d/overlayfs.sh"
 install -v -m 755 files/overctl "${ROOTFS_DIR}/usr/local/sbin/overctl"
 install -v -m 644 files/watchdog.conf "${ROOTFS_DIR}/etc/watchdog.conf"
 
-# Enable services and clean up system
+# Enable services and clean up
 on_chroot <<EOF
-  echo 'dtparam=watchdog=on' >> /boot/config.txt
-  systemctl enable watchdog
-  systemctl enable gymnasticon
-  systemctl enable gymnasticon-mods
-  systemctl enable lockrootfs
-  dphys-swapfile swapoff
-  dphys-swapfile uninstall
-  systemctl disable dphys-swapfile.service
-  apt-get remove -y --purge logrotate fake-hwclock rsyslog
+echo 'dtparam=watchdog=on' >> /boot/config.txt
+systemctl enable watchdog
+systemctl enable gymnasticon
+systemctl enable gymnasticon-mods
+systemctl enable lockrootfs
+dphys-swapfile swapoff
+dphys-swapfile uninstall
+systemctl disable dphys-swapfile.service
+apt-get remove -y --purge logrotate fake-hwclock rsyslog
 EOF
 
 install -v -m 644 files/motd "${ROOTFS_DIR}/etc/motd"
