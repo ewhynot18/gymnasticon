@@ -29,13 +29,14 @@ EOF
 
 # Clone your custom Gymnasticon fork into /opt
 on_chroot <<EOF
-  export PATH=/opt/gymnasticon/node/bin:\$PATH
-  git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
-  cd /opt/gymnasticon
-  git checkout speed-test
-  npm install
-  npm run build
-  chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
+rm -rf /opt/gymnasticon
+git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
+cd /opt/gymnasticon
+git checkout speed-test
+export PATH=/opt/gymnasticon/node/bin:\$PATH
+npm install
+npm run build
+chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
 EOF
 
 # Install service and config files
