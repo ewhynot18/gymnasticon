@@ -54,6 +54,12 @@ if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
 EOF
 fi
 
+# Ensure git is available in the target image
+on_chroot <<EOF
+  apt-get update
+  apt-get install -y git
+EOF
+
 # Clone and build Gymnasticon
 on_chroot <<EOF
   export PATH=/opt/gymnasticon/node/bin:\$PATH
