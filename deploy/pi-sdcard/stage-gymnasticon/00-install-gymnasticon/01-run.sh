@@ -41,6 +41,12 @@ on_chroot <<EOF
   # Set correct ownership for the pi user
   chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
 
+  # Ensure npm is available
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "npm not found, installing manually..."
+    curl -L https://www.npmjs.com/install.sh | bash
+  fi
+
   # Run npm commands as pi
   su - ${GYMNASTICON_USER} -c '
     export PATH=/opt/gymnasticon/node/bin:\$PATH
@@ -49,6 +55,7 @@ on_chroot <<EOF
     npm run build
   '
 EOF
+
 
 
 # Install service and config files
