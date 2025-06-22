@@ -5,7 +5,7 @@ NODE_URL=https://unofficial-builds.nodejs.org/download/release/v12.18.3/node-v12
 GYMNASTICON_USER=${FIRST_USER_NAME}
 GYMNASTICON_GROUP=${FIRST_USER_NAME}
 
-if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ] ; then
+if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
   TMPD=$(mktemp -d)
   trap 'rm -rf $TMPD' EXIT
   curl -Lo $TMPD/node.tar.gz ${NODE_URL}
@@ -23,34 +23,42 @@ EOF
 fi
 
 on_chroot <<EOF
-su ${GYMNASTICON_USER} -c 'export PATH=/opt/gymnasticon/node/bin:\$PATH; /opt/gymnasticon/node/bin/npm install -g gymnasticon'
+apt-get update
+apt-get install -y git
 EOF
 
+# Clone your custom Gymnasticon fork into /opt
+on_chroot <<EOF
+  export PATH=/opt/gymnasticon/node/bin:\$PATH
+  git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon
+  cd /opt/gymnasticon
+  git checkout speed-test
+  npm install
+  npm run build
+  chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
+EOF
+
+# Install service and config files
 install -v -m 644 files/gymnasticon.json "${ROOTFS_DIR}/etc/gymnasticon.json"
 install -v -m 644 files/gymnasticon.service "${ROOTFS_DIR}/etc/systemd/system/gymnasticon.service"
 install -v -m 644 files/gymnasticon-mods.service "${ROOTFS_DIR}/etc/systemd/system/gymnasticon-mods.service"
-
 install -v -m 644 files/lockrootfs.service "${ROOTFS_DIR}/etc/systemd/system/lockrootfs.service"
 install -v -m 644 files/bootfs-ro.service "${ROOTFS_DIR}/etc/systemd/system/bootfs-ro.service"
 install -v -m 644 files/overlayfs.sh "${ROOTFS_DIR}/etc/profile.d/overlayfs.sh"
 install -v -m 755 files/overctl "${ROOTFS_DIR}/usr/local/sbin/overctl"
-
 install -v -m 644 files/watchdog.conf "${ROOTFS_DIR}/etc/watchdog.conf"
 
+# Enable services and clean up system
 on_chroot <<EOF
-echo 'dtparam=watchdog=on' >> /boot/config.txt
-systemctl enable watchdog
-
-systemctl enable gymnasticon
-systemctl enable gymnasticon-mods
-
-systemctl enable lockrootfs
-
-dphys-swapfile swapoff
-dphys-swapfile uninstall
-systemctl disable dphys-swapfile.service
-apt-get remove -y --purge logrotate fake-hwclock rsyslog
-
+  echo 'dtparam=watchdog=on' >> /boot/config.txt
+  systemctl enable watchdog
+  systemctl enable gymnasticon
+  systemctl enable gymnasticon-mods
+  systemctl enable lockrootfs
+  dphys-swapfile swapoff
+  dphys-swapfile uninstall
+  systemctl disable dphys-swapfile.service
+  apt-get remove -y --purge logrotate fake-hwclock rsyslog
 EOF
 
 install -v -m 644 files/motd "${ROOTFS_DIR}/etc/motd"
