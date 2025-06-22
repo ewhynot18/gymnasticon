@@ -1,13 +1,15 @@
 #!/bin/bash -e
 
-NODE_VERSION=v12.18.3
-NODE_FILENAME=node-${NODE_VERSION}-linux-armv6l
-NODE_SHASUM256=de4440edf147d6b534b7dea61ef2e05eb8b7844dec93bdf324ce2c83cf7a7f3c
-NODE_URL=https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/${NODE_FILENAME}.tar.gz
+NODE_VERSION="v12.18.3"
+NODE_FILENAME="node-${NODE_VERSION}-linux-armv6l"
+NODE_URL="https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/${NODE_FILENAME}.tar.gz"
+NODE_SHASUM256="de4440edf147d6b534b7dea61ef2e05eb8b7844dec93bdf324ce2c83cf7a7f3c"
+
+NPM_VERSION="6.14.6"
+NPM_TARBALL_URL="https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz"
+
 GYMNASTICON_USER=${FIRST_USER_NAME}
 GYMNASTICON_GROUP=${FIRST_USER_NAME}
-NPM_VERSION=6.14.6
-NPM_TARBALL_URL=https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz
 
 # Retry function for apt-get
 retry_apt_get_update() {
@@ -40,23 +42,19 @@ retry_curl_download() {
   return 1
 }
 
-# Install Node.js and fallback npm if needed
+# Install Node.js
 if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
   TMPD=$(mktemp -d)
   trap 'rm -rf $TMPD' EXIT
   retry_curl_download "$NODE_URL" "$TMPD/node.tar.gz"
   echo "$NODE_SHASUM256 $TMPD/node.tar.gz" | sha256sum -c
   install -v -m 644 "$TMPD/node.tar.gz" "${ROOTFS_DIR}/tmp/node.tar.gz"
-
   on_chroot <<EOF
     mkdir -p /opt/gymnasticon/node
     cd /opt/gymnasticon/node
     tar zxvf /tmp/node.tar.gz --strip 1
 
-    # Debug check
-    ls -l /opt/gymnasticon/node/bin || true
-
-    # Fallback: install npm manually if not found
+    # Fallback install of npm if not present
     if [ ! -x /opt/gymnasticon/node/bin/npm ]; then
       echo "npm not found, installing manually..."
       cd /tmp
@@ -73,7 +71,7 @@ if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
 EOF
 fi
 
-# Ensure git is available in the target image
+# Ensure git is installed
 on_chroot <<EOF
   apt-get update
   apt-get install -y git
@@ -82,6 +80,7 @@ EOF
 # Clone and build Gymnasticon
 on_chroot <<EOF
   export PATH=/opt/gymnasticon/node/bin:\$PATH
+
   rm -rf /opt/gymnasticon
 
   for i in {1..5}; do
@@ -95,20 +94,24 @@ on_chroot <<EOF
 
   cd /opt/gymnasticon
   git checkout speed-test
+
   chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
+
+  echo "DEBUG: node version: \$(/opt/gymnasticon/node/bin/node -v)"
+  echo "DEBUG: npm version: \$(/opt/gymnasticon/node/bin/npm -v || echo 'npm not found')"
 
   su - ${GYMNASTICON_USER} -c '
     export PATH=/opt/gymnasticon/node/bin:\$PATH
     cd /opt/gymnasticon
-    npm install
-    npm run build
+    /opt/gymnasticon/node/bin/npm install
+    /opt/gymnasticon/node/bin/npm run build
   '
 EOF
 
 # Fix potential apt errors early
 retry_apt_get_update
 
-# Install service and config files
+# Install services and config
 install -v -m 644 files/gymnasticon.json "${ROOTFS_DIR}/etc/gymnasticon.json"
 install -v -m 644 files/gymnasticon.service "${ROOTFS_DIR}/etc/systemd/system/gymnasticon.service"
 install -v -m 644 files/gymnasticon-mods.service "${ROOTFS_DIR}/etc/systemd/system/gymnasticon-mods.service"
@@ -118,7 +121,7 @@ install -v -m 644 files/overlayfs.sh "${ROOTFS_DIR}/etc/profile.d/overlayfs.sh"
 install -v -m 755 files/overctl "${ROOTFS_DIR}/usr/local/sbin/overctl"
 install -v -m 644 files/watchdog.conf "${ROOTFS_DIR}/etc/watchdog.conf"
 
-# Enable services and clean up system
+# Enable services and system clean-up
 on_chroot <<EOF
   echo 'dtparam=watchdog=on' >> /boot/config.txt
   systemctl enable watchdog
