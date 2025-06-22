@@ -1,9 +1,13 @@
 #!/bin/bash -e
 
+NODE_VERSION=v12.18.3
+NODE_FILENAME=node-${NODE_VERSION}-linux-armv6l
 NODE_SHASUM256=de4440edf147d6b534b7dea61ef2e05eb8b7844dec93bdf324ce2c83cf7a7f3c
-NODE_URL=https://unofficial-builds.nodejs.org/download/release/v12.18.3/node-v12.18.3-linux-armv6l.tar.gz
+NODE_URL=https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/${NODE_FILENAME}.tar.gz
 GYMNASTICON_USER=${FIRST_USER_NAME}
 GYMNASTICON_GROUP=${FIRST_USER_NAME}
+NPM_VERSION=6.14.6
+NPM_TARBALL_URL=https://registry.npmjs.org/npm/-/npm-${NPM_VERSION}.tgz
 
 # Retry function for apt-get
 retry_apt_get_update() {
@@ -36,17 +40,32 @@ retry_curl_download() {
   return 1
 }
 
-# Install Node.js and npm
+# Install Node.js and fallback npm if needed
 if [ ! -x "${ROOTFS_DIR}/opt/gymnasticon/node/bin/node" ]; then
   TMPD=$(mktemp -d)
   trap 'rm -rf $TMPD' EXIT
   retry_curl_download "$NODE_URL" "$TMPD/node.tar.gz"
   echo "$NODE_SHASUM256 $TMPD/node.tar.gz" | sha256sum -c
   install -v -m 644 "$TMPD/node.tar.gz" "${ROOTFS_DIR}/tmp/node.tar.gz"
+
   on_chroot <<EOF
     mkdir -p /opt/gymnasticon/node
     cd /opt/gymnasticon/node
     tar zxvf /tmp/node.tar.gz --strip 1
+
+    # Debug check
+    ls -l /opt/gymnasticon/node/bin || true
+
+    # Fallback: install npm manually if not found
+    if [ ! -x /opt/gymnasticon/node/bin/npm ]; then
+      echo "npm not found, installing manually..."
+      cd /tmp
+      curl -LO ${NPM_TARBALL_URL}
+      tar -xzf npm-${NPM_VERSION}.tgz
+      cd package
+      /opt/gymnasticon/node/bin/node bin/npm-cli.js install -g .
+    fi
+
     chown -R "${GYMNASTICON_USER}:${GYMNASTICON_GROUP}" /opt/gymnasticon
     echo "export PATH=/opt/gymnasticon/node/bin:\$PATH" >> /home/${GYMNASTICON_USER}/.profile
     echo "raspi-config nonint get_overlay_now || export PROMPT_COMMAND=\"echo  -e '\033[1m(rw-mode)\033[0m\c'\"" >> /home/${GYMNASTICON_USER}/.profile
@@ -63,22 +82,19 @@ EOF
 # Clone and build Gymnasticon
 on_chroot <<EOF
   export PATH=/opt/gymnasticon/node/bin:\$PATH
-
   rm -rf /opt/gymnasticon
 
-  # Retry git clone if needed
   for i in {1..5}; do
     if git clone https://github.com/ewhynot18/gymnasticon.git /opt/gymnasticon; then
       break
     else
-      echo "git clone failed... retrying in $((i * 5)) seconds"
-      sleep $((i * 5))
+      echo "git clone failed... retrying in \$((i * 5)) seconds"
+      sleep \$((i * 5))
     fi
   done
 
   cd /opt/gymnasticon
   git checkout speed-test
-
   chown -R ${GYMNASTICON_USER}:${GYMNASTICON_GROUP} /opt/gymnasticon
 
   su - ${GYMNASTICON_USER} -c '
